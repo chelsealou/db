@@ -3,7 +3,10 @@
     <types>
         <members>HealthStatusHelper</members>
         <members>HealthStatusHelper_Test</members>
+        <members>PercentileCalcPreparation</members>
         <members>PercentileCalculation_Test</members>
+        <members>PostInstallClass</members>
+        <members>PostInstallClass_Test</members>
         <members>ZScoreHelper_Test</members>
         <name>ApexClass</name>
     </types>
