@@ -1,18 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Package xmlns="http://soap.sforce.com/2006/04/metadata">
     <types>
-        <members>HealthStatusHelper</members>
-        <members>HealthStatusHelper_Test</members>
-        <members>PercentileCalcPreparation</members>
-        <members>PercentileCalculation_Test</members>
-        <members>PostInstallClass</members>
-        <members>PostInstallClass_Test</members>
-        <members>ZScoreHelper_Test</members>
-        <name>ApexClass</name>
-    </types>
-    <types>
-        <members>MedicalRecordTrigger</members>
-        <name>ApexTrigger</name>
+        <members>Child_Record_Page</members>
+        <members>New_Child_Page</members>
+        <name>FlexiPage</name>
     </types>
     <version>67.0</version>
 </Package>
