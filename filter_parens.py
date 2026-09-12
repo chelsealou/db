@@ -1,30 +1,27 @@
 #!/usr/bin/env python3
 """Filter a CSV, keeping only lines that contain an open or close parenthesis.
 
-Usage:
-    python filter_parens.py input.csv            # prints matching lines
-    python filter_parens.py input.csv out.csv    # writes matching lines to out.csv
+Just set the two paths below, then hit the Run button in VS Code.
 """
-import sys
+
+# ---------------------------------------------------------------------------
+# EDIT THESE TWO LINES:
+INPUT_FILE = "yourfile.csv"     # <- paste the path to your input CSV here
+OUTPUT_FILE = None              # <- set to "output.csv" to save, or leave None to just print
+# ---------------------------------------------------------------------------
 
 
 def main():
-    args = sys.argv[1:]
-    if not args:
-        sys.exit("Usage: python filter_parens.py <input.csv> [output.csv]")
-
-    infile = args[0]
-    outfile = args[1] if len(args) > 1 else None
-
-    with open(infile, "r", newline="") as f:
+    with open(INPUT_FILE, "r", newline="") as f:
         matches = [line for line in f if "(" in line or ")" in line]
 
-    if outfile:
-        with open(outfile, "w", newline="") as f:
+    if OUTPUT_FILE:
+        with open(OUTPUT_FILE, "w", newline="") as f:
             f.writelines(matches)
-        print(f"Wrote {len(matches)} matching line(s) to {outfile}")
+        print(f"Wrote {len(matches)} matching line(s) to {OUTPUT_FILE}")
     else:
-        sys.stdout.writelines(matches)
+        for line in matches:
+            print(line, end="")
 
 
 if __name__ == "__main__":
