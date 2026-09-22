@@ -7,7 +7,9 @@ Salesforce Contact ID (plus a match-status column) to the mailing list.
 How matching works
 ------------------
 * The mailing CSV has no "First Name" column, so the first name is parsed
-  out of the "Formal Greeting" field (the first word/token).
+  out of the "Formal Greeting" field: salutations (Mr., Mrs., Dr., ...) are
+  dropped, and joint greetings like "Mrs. Timothy and Mrs. Julie Cremins"
+  yield BOTH first names (Timothy, Julie), each tried against the export.
 * Candidates are found by First Name + Last Name (case/punctuation-insensitive).
 * When several Salesforce contacts share that name, the one whose address
   best matches the mailing address is chosen ("best match").
@@ -62,6 +64,14 @@ OUT_MATCHED_NAME = "Matched Contact"  # QA helper (matched SF name) -- delete if
 # ================================================================
 
 
+# Salutations to strip from the Formal Greeting (compared lowercased, no dots).
+SALUTATIONS = {
+    "mr", "mrs", "ms", "miss", "mx", "dr", "prof", "professor", "rev",
+    "reverend", "sir", "madam", "madame", "mister", "fr", "father", "hon",
+    "honorable", "capt", "captain", "lt", "col", "sgt", "gen", "rabbi",
+    "pastor", "deacon", "elder", "bishop", "the",
+}
+
 # Common US street-type abbreviations, normalized so "Street" == "St", etc.
 STREET_ABBREV = {
     "street": "st", "avenue": "ave", "av": "ave", "boulevard": "blvd",
@@ -101,17 +111,37 @@ def norm_zip(value):
     return digits[:5]
 
 
-def parse_first_name(formal_greeting):
+def parse_first_names(formal_greeting):
     """
-    Pull the first name out of the Formal Greeting field.
+    Pull the first name(s) out of the Formal Greeting field.
 
-    The Formal Greeting holds the full name with no salutation, e.g.
-    "John Smith" -> "John". We take the first whitespace-delimited token.
+    Handles salutations and joint greetings. Returns a list of candidate
+    first names (usually one, two for a couple):
+
+        "John Smith"                          -> ["john"]
+        "Mr. John Smith"                      -> ["john"]
+        "Mrs. Timothy and Mrs. Julie Cremins" -> ["timothy", "julie"]
+        "Mr. & Mrs. John Smith"               -> ["john"]
+
+    For each side of an "and"/"&" split, leading salutations are dropped and
+    the first remaining word is taken as the first name.
     """
     text = (formal_greeting or "").strip()
     if not text:
-        return ""
-    return text.split()[0]
+        return []
+
+    parts = re.split(r"(?i)\s+and\s+|\s*&\s*", text)
+    names = []
+    for part in parts:
+        tokens = norm_text(part).split()          # lowercased, punctuation removed
+        idx = 0
+        while idx < len(tokens) and tokens[idx] in SALUTATIONS:
+            idx += 1
+        if idx < len(tokens):
+            first = tokens[idx]
+            if first not in names:                # de-dupe, keep order
+                names.append(first)
+    return names
 
 
 def address_score(mail_row, sf_row):
@@ -197,9 +227,18 @@ def main():
         writer.writeheader()
 
         for row in mail_rows:
-            first = parse_first_name(row.get(MAIL_FORMAL_GREETING))
+            first_names = parse_first_names(row.get(MAIL_FORMAL_GREETING))
             last = row.get(MAIL_LAST_NAME)
-            candidates = sf_index.get((norm_name(first), norm_name(last)), [])
+
+            # Gather Salesforce contacts matching last name + ANY parsed first
+            # name (a joint greeting yields two), de-duplicated.
+            candidates = []
+            seen = set()
+            for first in first_names:
+                for sf in sf_index.get((norm_name(first), norm_name(last)), []):
+                    if id(sf) not in seen:
+                        seen.add(id(sf))
+                        candidates.append(sf)
 
             if not candidates:
                 row[OUT_CONTACT_ID] = ""
