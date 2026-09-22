@@ -177,14 +177,26 @@ def address_score(mail_row, sf_row):
 
 
 def read_csv(path):
-    """Read a CSV into (list-of-dict-rows, fieldnames). Handles BOM."""
-    try:
-        with open(path, newline="", encoding="utf-8-sig") as fh:
-            reader = csv.DictReader(fh)
-            rows = list(reader)
-            return rows, reader.fieldnames or []
-    except FileNotFoundError:
-        sys.exit(f"ERROR: file not found: {path}")
+    """
+    Read a CSV into (list-of-dict-rows, fieldnames).
+
+    Tries several encodings, because CSVs exported from Excel/Salesforce are
+    often not UTF-8. "latin-1" decodes any byte, so it's the safe last resort.
+    """
+    encodings = ["utf-8-sig", "cp1252", "latin-1"]
+    for encoding in encodings:
+        try:
+            with open(path, newline="", encoding=encoding) as fh:
+                reader = csv.DictReader(fh)
+                rows = list(reader)
+                if encoding != encodings[0]:
+                    print(f"Note: read {path} as {encoding} (not UTF-8).")
+                return rows, reader.fieldnames or []
+        except FileNotFoundError:
+            sys.exit(f"ERROR: file not found: {path}")
+        except UnicodeDecodeError:
+            continue  # try the next encoding
+    sys.exit(f"ERROR: could not decode {path} with any of: {encodings}")
 
 
 def require_columns(fieldnames, needed, which):
