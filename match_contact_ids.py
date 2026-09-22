@@ -11,10 +11,18 @@ How matching works
   dropped, and joint greetings like "Mrs. Timothy and Mrs. Julie Cremins"
   yield BOTH first names (Timothy, Julie), each tried against the export.
 * Candidates are found by First Name + Last Name (case/punctuation-insensitive).
-* When several Salesforce contacts share that name, the one whose address
-  best matches the mailing address is chosen ("best match").
+* Each candidate is then scored on how many address fields also agree --
+  ZIP, City, and Street (Street uses fuzzy matching, so "St" == "Street").
+  The best-scoring candidate wins; Street naturally breaks ties when several
+  contacts share a name.
 * A "Match Status" column records how many name-matches were found for the
   row: a number (1, 2, 3, ...) or the word "none".
+* A "Match Confidence" column reports how trustworthy the chosen match is,
+  based on how many address fields agreed:
+      High   -> ZIP + City + Street all agree
+      Medium -> two of the three agree
+      Low    -> one or none agree (e.g. name-only match)
+  The agreeing fields are listed, e.g. "High (zip, city, street)".
 
 Usage
 -----
@@ -60,7 +68,11 @@ SF_CONTACT_ID = "Contact ID"
 # Names of the columns that will be added to the output file:
 OUT_CONTACT_ID = "Contact ID"
 OUT_MATCH_STATUS = "Match Status"
+OUT_MATCH_CONFIDENCE = "Match Confidence"
 OUT_MATCHED_NAME = "Matched Contact"  # QA helper (matched SF name) -- delete if unwanted
+
+# Street similarity at/above this ratio (0..1) counts as a street match.
+STREET_MATCH_THRESHOLD = 0.85
 # ================================================================
 
 
@@ -176,6 +188,44 @@ def address_score(mail_row, sf_row):
     return score
 
 
+def zip_matches(mail_row, sf_row):
+    z = norm_zip(mail_row.get(MAIL_ZIP))
+    return bool(z) and z == norm_zip(sf_row.get(SF_ZIP))
+
+
+def city_matches(mail_row, sf_row):
+    c = norm_text(mail_row.get(MAIL_CITY))
+    return bool(c) and c == norm_text(sf_row.get(SF_CITY))
+
+
+def street_matches(mail_row, sf_row):
+    a = norm_street(mail_row.get(MAIL_STREET))
+    b = norm_street(sf_row.get(SF_STREET))
+    if not a or not b:
+        return False
+    if a == b:
+        return True
+    return SequenceMatcher(None, a, b).ratio() >= STREET_MATCH_THRESHOLD
+
+
+def match_confidence(mail_row, sf_row):
+    """
+    Grade the chosen match by how many address fields agree.
+    Returns a label like "High (zip, city, street)".
+    """
+    agree = []
+    if zip_matches(mail_row, sf_row):
+        agree.append("zip")
+    if city_matches(mail_row, sf_row):
+        agree.append("city")
+    if street_matches(mail_row, sf_row):
+        agree.append("street")
+
+    level = {3: "High", 2: "Medium", 1: "Low", 0: "Low"}[len(agree)]
+    detail = ", ".join(agree) if agree else "name only"
+    return f"{level} ({detail})"
+
+
 def read_csv(path):
     """
     Read a CSV into (list-of-dict-rows, fieldnames).
@@ -228,11 +278,14 @@ def main():
 
     sf_index = build_sf_index(sf_rows)
 
-    out_fields = list(mail_fields) + [OUT_CONTACT_ID, OUT_MATCH_STATUS, OUT_MATCHED_NAME]
+    out_fields = list(mail_fields) + [
+        OUT_CONTACT_ID, OUT_MATCH_STATUS, OUT_MATCH_CONFIDENCE, OUT_MATCHED_NAME
+    ]
 
     matched = 0
     multiple = 0
     unmatched = 0
+    conf_counts = {"High": 0, "Medium": 0, "Low": 0}
 
     with open(OUTPUT_CSV, "w", newline="", encoding="utf-8-sig") as out_fh:
         writer = csv.DictWriter(out_fh, fieldnames=out_fields)
@@ -255,18 +308,22 @@ def main():
             if not candidates:
                 row[OUT_CONTACT_ID] = ""
                 row[OUT_MATCH_STATUS] = "none"
+                row[OUT_MATCH_CONFIDENCE] = ""
                 row[OUT_MATCHED_NAME] = ""
                 unmatched += 1
             else:
                 # Choose the candidate whose address best matches the mailing row.
                 best = max(candidates, key=lambda sf: address_score(row, sf))
+                confidence = match_confidence(row, best)
                 row[OUT_CONTACT_ID] = best.get(SF_CONTACT_ID, "")
                 row[OUT_MATCH_STATUS] = str(len(candidates))
+                row[OUT_MATCH_CONFIDENCE] = confidence
                 row[OUT_MATCHED_NAME] = \
                     f"{best.get(SF_FIRST_NAME, '')} {best.get(SF_LAST_NAME, '')}".strip()
                 matched += 1
                 if len(candidates) > 1:
                     multiple += 1
+                conf_counts[confidence.split()[0]] += 1
 
             writer.writerow(row)
 
@@ -274,6 +331,8 @@ def main():
     print(f"Done. Wrote {total} rows to: {OUTPUT_CSV}")
     print(f"  Matched (1+ name match): {matched}")
     print(f"    of which had multiple name matches (best address chosen): {multiple}")
+    print(f"    confidence -> High: {conf_counts['High']}  "
+          f"Medium: {conf_counts['Medium']}  Low: {conf_counts['Low']}")
     print(f"  No match: {unmatched}")
 
 
