@@ -1,0 +1,9 @@
+{
+  "rotation": [
+    {"type": "image", "path": "media/example1.jpg", "text": ""},
+    {"type": "image", "path": "media/example2.png", "text": "Worth a look"},
+    {"type": "link", "url": "https://example.com/article-one", "text": "Good read:"},
+    {"type": "link", "url": "https://example.com/article-two", "text": ""}
+  ],
+  "screenshot_reply": {"type": "image", "path": "media/screenshot_reply.jpg", "text": ""}
+}
